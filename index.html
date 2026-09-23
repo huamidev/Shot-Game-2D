@@ -24,7 +24,7 @@
     touch-action: none;
   }
 
-  /* ===== 左上角 HUD + 武器栏 ===== */
+  /* ===== 左上角 HUD ===== */
   #hud {
     position: absolute;
     top: 10px; left: 12px;
@@ -77,11 +77,7 @@
     box-shadow: 0 0 14px rgba(0,255,255,0.7);
     color: #fff;
   }
-  .weaponBtn.reloading {
-    border-color: #fa0;
-    color: #fa0;
-    box-shadow: 0 0 12px rgba(255,170,0,0.6);
-  }
+  .weaponBtn.reloading { border-color: #fa0; color: #fa0; box-shadow: 0 0 12px rgba(255,170,0,0.6); }
   .weaponBtn.empty { border-color: #f44; color: #f44; }
 
   /* ===== 底部武器信息 ===== */
@@ -139,6 +135,7 @@
   #touchLayer { position: absolute; inset: 0; z-index: 3; display: none; }
   body.mobile #touchLayer { display: block; }
 
+  /* 左摇杆 */
   #joyBase {
     position: absolute;
     left: 24px; bottom: 30px;
@@ -158,31 +155,13 @@
     border: 2px solid #0ff;
     box-shadow: 0 0 12px rgba(0,255,255,0.5);
   }
-  #aimZone {
+
+  /* 右半屏：点击射击区域 */
+  #fireZone {
     position: absolute;
     right: 0; top: 0;
-    width: 50%; height: 100%;
+    width: 55%; height: 100%;
     touch-action: none;
-  }
-  #aimBase {
-    position: absolute;
-    width: 110px; height: 110px;
-    margin: -55px 0 0 -55px;
-    border-radius: 50%;
-    background: rgba(255,80,80,0.06);
-    border: 2px solid rgba(255,80,80,0.2);
-    opacity: 0;
-    pointer-events: none;
-  }
-  #aimKnob {
-    position: absolute;
-    width: 44px; height: 44px;
-    margin: -22px 0 0 -22px;
-    border-radius: 50%;
-    background: rgba(255,80,80,0.4);
-    border: 2px solid #f66;
-    opacity: 0;
-    pointer-events: none;
   }
 
   /* 换弹按钮 */
@@ -221,11 +200,7 @@
     font-family: monospace;
   }
   #scopeBtn.visible { display: flex; }
-  #scopeBtn.active {
-    background: rgba(0,255,180,0.4);
-    box-shadow: 0 0 20px #0fc;
-    color: #fff;
-  }
+  #scopeBtn.active { background: rgba(0,255,180,0.4); box-shadow: 0 0 20px #0fc; color: #fff; }
 
   /* 开镜遮罩 */
   #scopeOverlay {
@@ -241,8 +216,7 @@
     position: absolute;
     inset: 0;
     background: radial-gradient(circle at center,
-      transparent 0,
-      transparent 34%,
+      transparent 0, transparent 34%,
       rgba(0,0,0,0.85) 38%,
       rgba(0,0,0,0.95) 100%);
   }
@@ -296,10 +270,7 @@
 
 <div id="touchLayer">
   <div id="joyBase"><div id="joyKnob"></div></div>
-  <div id="aimZone">
-    <div id="aimBase"></div>
-    <div id="aimKnob"></div>
-  </div>
+  <div id="fireZone"></div>
   <div id="reloadBtn">换弹<br>R</div>
   <div id="scopeBtn">开镜<br>🔭</div>
 </div>
@@ -380,7 +351,6 @@ const WEAPONS = [
     auto: true,  color: '#0f0', recoil: 4, pierce: 0,
     canScope: false, scopeSlow: 1.0, scopeSpread: 1.0 },
 
-  // 狙击枪：高伤 + 穿透 2 + 弹速极快 + 开镜后散射近乎为 0
   { id: 3, name: '狙击枪', magSize: 5,  reloadTime: 2.4, fireInterval: 0.9,
     bulletSpeed: 1600, bulletR: 3, damage: 5, pellets: 1, spread: 0.02,
     auto: false, color: '#f0f', recoil: 22, pierce: 2,
@@ -395,6 +365,9 @@ const mouse = { x: 0, y: 0, down: false, right: false };
 let player, bullets, enemies, particles, score, gameOver, spawnTimer, lastTime;
 const camera = { shake: 0, zoom: 1, targetZoom: 1 };
 let scoped = false;
+
+// 移动端：右手点击目标点 + 是否按住开火
+const aimTarget = { x: 0, y: 0, active: false, id: null };
 
 const rand = (min, max) => Math.random() * (max - min) + min;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -426,6 +399,9 @@ function initGame() {
   camera.zoom = 1;
   camera.targetZoom = 1;
   scoped = false;
+  aimTarget.active = false;
+  aimTarget.id = null;
+
   $overlay.style.display = 'none';
   $scopeOverlay.classList.remove('active');
   $scopeBtn.classList.remove('active');
@@ -447,7 +423,6 @@ function switchWeapon(index) {
   player.reloading = false;
   player.reloadTimer = 0;
   player.fireCooldown = Math.max(player.fireCooldown, 0.15);
-  // 切到非狙击枪时自动关镜
   if (!player.weapon.canScope) setScoped(false);
   updateScopeBtn();
   updateWeaponHud();
@@ -475,7 +450,6 @@ function tryShoot() {
   if (player.ammo <= 0) { startReload(); return; }
   const w = player.weapon;
 
-  // 开镜时散射缩小
   let spreadMul = 1;
   if (scoped && w.canScope) spreadMul = w.scopeSpread;
 
@@ -494,7 +468,6 @@ function tryShoot() {
   player.fireCooldown = w.fireInterval;
   camera.shake = Math.max(camera.shake, w.recoil);
 
-  // 开火震动：狙击枪更强
   if (w.id === 3) vibrate(40);
   else if (w.id === 1) vibrate([25, 20, 25]);
   else vibrate(12);
@@ -516,17 +489,12 @@ function setScoped(on) {
 }
 
 function toggleScope() {
-  if (gameOver) return;
-  if (!player.weapon.canScope) return;
+  if (gameOver || !player.weapon.canScope) return;
   setScoped(!scoped);
 }
 
 function updateScopeBtn() {
-  if (player.weapon.canScope) {
-    $scopeBtn.classList.add('visible');
-  } else {
-    $scopeBtn.classList.remove('visible');
-  }
+  $scopeBtn.classList.toggle('visible', player.weapon.canScope);
 }
 
 // ============================================================
@@ -669,66 +637,46 @@ joyBase.addEventListener('touchend', endJoy);
 joyBase.addEventListener('touchcancel', endJoy);
 
 // ============================================================
-// 移动端：右半屏瞄准
-// 关键修复：瞄准方向仅由右侧拖动改变，绝不读取移动摇杆
+// 移动端：右半屏「点哪打哪」
 // ============================================================
-const aimZone = document.getElementById('aimZone');
-const aimBase = document.getElementById('aimBase');
-const aimKnob = document.getElementById('aimKnob');
-let aimTouchId = null;
-const aimCenter = { x: 0, y: 0 };
-const aimVec = { x: 1, y: 0 };
-let aimActive = false;  // 是否正在拖动瞄准
-const AIM_RADIUS = 55;
-const AIM_DEADZONE = 14;
+const fireZone = document.getElementById('fireZone');
 
-aimZone.addEventListener('touchstart', e => {
+function getCanvasPos(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
+
+fireZone.addEventListener('touchstart', e => {
   e.preventDefault();
-  if (aimTouchId !== null) return;
+  if (aimTarget.id !== null) return;
   const t = e.changedTouches[0];
-  aimTouchId = t.identifier;
-  aimCenter.x = t.clientX;
-  aimCenter.y = t.clientY;
-  aimBase.style.left = t.clientX + 'px';
-  aimBase.style.top = t.clientY + 'px';
-  aimKnob.style.left = t.clientX + 'px';
-  aimKnob.style.top = t.clientY + 'px';
-  aimBase.style.opacity = '1';
-  aimKnob.style.opacity = '1';
-  aimActive = true;
-  // 注意：这里不重置 aimVec，让玩家继续沿用上次朝向，避免开局突然转向
+  aimTarget.id = t.identifier;
+  const pos = getCanvasPos(t.clientX, t.clientY);
+  aimTarget.x = pos.x;
+  aimTarget.y = pos.y;
+  aimTarget.active = true;
 }, { passive: false });
 
-aimZone.addEventListener('touchmove', e => {
+fireZone.addEventListener('touchmove', e => {
   e.preventDefault();
   for (const t of e.changedTouches) {
-    if (t.identifier !== aimTouchId) continue;
-    let dx = t.clientX - aimCenter.x;
-    let dy = t.clientY - aimCenter.y;
-    const d = Math.hypot(dx, dy);
-    if (d > AIM_RADIUS) { dx = dx / d * AIM_RADIUS; dy = dy / d * AIM_RADIUS; }
-    aimKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-    // 只有超过死区才更新朝向，防止手指微抖时方向乱转
-    if (d > AIM_DEADZONE) {
-      aimVec.x = dx / d;
-      aimVec.y = dy / d;
-    }
+    if (t.identifier !== aimTarget.id) continue;
+    const pos = getCanvasPos(t.clientX, t.clientY);
+    aimTarget.x = pos.x;
+    aimTarget.y = pos.y;
   }
 }, { passive: false });
 
-function endAim(e) {
+function endFire(e) {
   for (const t of e.changedTouches) {
-    if (t.identifier === aimTouchId) {
-      aimTouchId = null;
-      aimActive = false;
-      aimBase.style.opacity = '0';
-      aimKnob.style.opacity = '0';
-      aimKnob.style.transform = 'translate(0,0)';
+    if (t.identifier === aimTarget.id) {
+      aimTarget.id = null;
+      aimTarget.active = false;
     }
   }
 }
-aimZone.addEventListener('touchend', endAim);
-aimZone.addEventListener('touchcancel', endAim);
+fireZone.addEventListener('touchend', endFire);
+fireZone.addEventListener('touchcancel', endFire);
 
 // 移动端按钮
 $reloadBtn.addEventListener('touchstart', e => {
@@ -791,7 +739,6 @@ function explode(x, y, color, count = 12) {
 function update(dt) {
   if (gameOver) return;
 
-  // 摄像机缩放平滑
   camera.zoom += (camera.targetZoom - camera.zoom) * Math.min(1, dt * 10);
 
   // 移动
@@ -807,26 +754,24 @@ function update(dt) {
     if (len > 0) { dx /= len; dy /= len; }
   }
 
-  // 开镜时移动变慢
   let speedMul = 1;
   if (scoped && player.weapon.canScope) speedMul = player.weapon.scopeSlow;
 
   player.x = clamp(player.x + dx * player.speed * speedMul * dt, player.r, W - player.r);
   player.y = clamp(player.y + dy * player.speed * speedMul * dt, player.r, H - player.r);
 
-  // 瞄准：手机端只由 aimVec 决定；PC 端鼠标
+  // 瞄准：手机端「点哪打哪」
   if (isMobile) {
-    if (aimVec.x !== 0 || aimVec.y !== 0) {
-      player.angle = Math.atan2(aimVec.y, aimVec.x);
+    if (aimTarget.active) {
+      player.angle = Math.atan2(aimTarget.y - player.y, aimTarget.x - player.x);
     }
   } else {
-    // PC 开镜时也要用鼠标位置算角度，但缩放后要修正
     player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
   }
 
-  // 射击
+  // 射击：手机端按住右半屏即持续射击
   const w = player.weapon;
-  const wantShoot = isMobile ? aimActive : mouse.down;
+  const wantShoot = isMobile ? aimTarget.active : mouse.down;
   if (wantShoot) {
     if (w.auto) tryShoot();
     else if (!player._triggerHeld) { tryShoot(); player._triggerHeld = true; }
@@ -871,13 +816,8 @@ function update(dt) {
             enemies.splice(j, 1);
             score += e.type === 'chaser' ? 10 : 30;
           }
-          if (b.pierce > 0) {
-            b.pierce--;
-          } else {
-            bullets.splice(i, 1);
-            removed = true;
-            break;
-          }
+          if (b.pierce > 0) b.pierce--;
+          else { bullets.splice(i, 1); removed = true; break; }
         }
       }
       if (removed) continue;
@@ -939,7 +879,6 @@ function render() {
     ctx.translate(rand(-s, s), rand(-s, s));
   }
 
-  // 应用缩放（以玩家为中心）
   if (camera.zoom !== 1) {
     ctx.translate(player.x, player.y);
     ctx.scale(camera.zoom, camera.zoom);
@@ -998,6 +937,49 @@ function render() {
     ctx.beginPath();
     ctx.arc(player.x, player.y, player.r + 10, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
     ctx.stroke();
+  }
+
+  // ============ 移动端：目标点脉冲准星 ============
+  if (isMobile && aimTarget.active) {
+    const t = performance.now() / 1000;
+    const pulse = 1 + Math.sin(t * 10) * 0.15;
+    const cx = aimTarget.x, cy = aimTarget.y;
+
+    // 外圈脉冲
+    ctx.strokeStyle = 'rgba(0,255,255,' + (0.4 + Math.sin(t * 8) * 0.2) + ')';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 16 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 内圈
+    ctx.strokeStyle = '#0ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 十字线
+    ctx.beginPath();
+    ctx.moveTo(cx - 20, cy); ctx.lineTo(cx - 10, cy);
+    ctx.moveTo(cx + 10, cy); ctx.lineTo(cx + 20, cy);
+    ctx.moveTo(cx, cy - 20); ctx.lineTo(cx, cy - 10);
+    ctx.moveTo(cx, cy + 10); ctx.lineTo(cx, cy + 20);
+    ctx.stroke();
+
+    // 中心点
+    ctx.fillStyle = '#0ff';
+    ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
+
+    // 从玩家到目标点的虚线（帮助理解朝向）
+    ctx.setLineDash([4, 6]);
+    ctx.strokeStyle = 'rgba(0,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y);
+    ctx.lineTo(cx, cy);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // PC 准星
@@ -1061,9 +1043,6 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-// ============================================================
-// 启动
-// ============================================================
 resizeCanvas();
 initGame();
 requestAnimationFrame(loop);
