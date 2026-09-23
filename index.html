@@ -601,14 +601,32 @@ function refreshJoyCenter() {
   joyCenter.x = r.left + r.width / 2;
   joyCenter.y = r.top + r.height / 2;
 }
+const JOY_DEADZONE = 8;   // 死区，防止手指微抖
+
 function handleJoyMove(cx, cy) {
   let dx = cx - joyCenter.x;
   let dy = cy - joyCenter.y;
   const d = Math.hypot(dx, dy);
-  if (d > JOY_RADIUS) { dx = dx / d * JOY_RADIUS; dy = dy / d * JOY_RADIUS; }
-  joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-  moveVec.x = dx / JOY_RADIUS;
-  moveVec.y = dy / JOY_RADIUS;
+
+  if (d < JOY_DEADZONE) {
+    moveVec.x = 0;
+    moveVec.y = 0;
+    joyKnob.style.transform = 'translate(0px, 0px)';
+    return;
+  }
+
+  // 摇杆帽视觉位置（截断在半径内）
+  let vx = dx, vy = dy;
+  if (d > JOY_RADIUS) {
+    vx = dx / d * JOY_RADIUS;
+    vy = dy / d * JOY_RADIUS;
+  }
+  joyKnob.style.transform = `translate(${vx}px, ${vy}px)`;
+
+  // 方向单位化 + 模长按推杆距离（0~1）
+  const mag = Math.min(d / JOY_RADIUS, 1);
+  moveVec.x = (dx / d) * mag;
+  moveVec.y = (dy / d) * mag;
 }
 joyBase.addEventListener('touchstart', e => {
   e.preventDefault();
