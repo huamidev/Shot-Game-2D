@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>2D Shooter</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #111;
+    font-family: monospace;
+    overflow: hidden;
+    position: fixed;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #gameCanvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    background: #1a1a2e;
+    touch-action: none;
+  }
+
+  /* ===== 左上角 HUD + 武器栏 ===== */
+  #hud {
+    position: absolute;
+    top: 10px; left: 12px;
+    color: #0ff;
+    font-size: 16px;
+    text-shadow: 0 0 8px #0ff;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #weaponBar {
+    position: absolute;
+    top: 38px; left: 12px;
+    display: flex;
+    gap: 6px;
+    z-index: 6;
+    flex-wrap: wrap;
+    max-width: 70vw;
+  }
+  .weaponBtn {
+    min-width: 66px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.5);
+    border: 2px solid rgba(0,255,255,0.35);
+    color: #0ff;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: bold;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.12s;
+    touch-action: none;
+    user-select: none;
+    line-height: 1.25;
+  }
+  .weaponBtn .wName { display: block; font-size: 12px; }
+  .weaponBtn .wAmmo { display: block; font-size: 10px; opacity: 0.75; margin-top: 1px; }
+  .weaponBtn .wKey {
+    display: inline-block;
+    font-size: 9px;
+    padding: 0 3px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    opacity: 0.6;
+    margin-left: 3px;
+  }
+  .weaponBtn.active {
+    background: rgba(0,255,255,0.3);
+    border-color: #0ff;
+    box-shadow: 0 0 14px rgba(0,255,255,0.7);
+    color: #fff;
+  }
+  .weaponBtn.reloading {
+    border-color: #fa0;
+    color: #fa0;
+    box-shadow: 0 0 12px rgba(255,170,0,0.6);
+  }
+  .weaponBtn.empty { border-color: #f44; color: #f44; }
+
+  /* ===== 底部武器信息 ===== */
+  #weaponHud {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 14px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 5;
+    text-shadow: 0 0 6px #000;
+    background: rgba(0,0,0,0.4);
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    min-width: 160px;
+  }
+  #weaponName { color: #0ff; font-weight: bold; font-size: 15px; }
+  #ammoText { font-size: 18px; font-weight: bold; margin-top: 2px; }
+  #ammoText.reloading { color: #fa0; }
+  #ammoText.empty { color: #f44; }
+  #scopeHint { font-size: 11px; color: #fa0; margin-top: 2px; display: none; }
+  #weaponHud.scoped #scopeHint { display: block; }
+
+  #overlay {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0,0,0,0.8);
+    color: #fff;
+    text-align: center;
+    z-index: 10;
+    padding: 20px;
+  }
+  #overlay h1 { font-size: 42px; margin-bottom: 16px; color: #f44; }
+  #overlay p { font-size: 18px; margin-bottom: 24px; }
+  #overlay button {
+    padding: 14px 40px;
+    font-size: 18px;
+    background: #0ff;
+    border: none;
+    color: #111;
+    cursor: pointer;
+    font-family: monospace;
+    font-weight: bold;
+    border-radius: 6px;
+  }
+
+  /* ===== 触控层 ===== */
+  #touchLayer { position: absolute; inset: 0; z-index: 3; display: none; }
+  body.mobile #touchLayer { display: block; }
+
+  #joyBase {
+    position: absolute;
+    left: 24px; bottom: 30px;
+    width: 130px; height: 130px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    border: 2px solid rgba(255,255,255,0.15);
+    touch-action: none;
+  }
+  #joyKnob {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 56px; height: 56px;
+    margin: -28px 0 0 -28px;
+    border-radius: 50%;
+    background: rgba(0,255,255,0.35);
+    border: 2px solid #0ff;
+    box-shadow: 0 0 12px rgba(0,255,255,0.5);
+  }
+  #aimZone {
+    position: absolute;
+    right: 0; top: 0;
+    width: 50%; height: 100%;
+    touch-action: none;
+  }
+  #aimBase {
+    position: absolute;
+    width: 110px; height: 110px;
+    margin: -55px 0 0 -55px;
+    border-radius: 50%;
+    background: rgba(255,80,80,0.06);
+    border: 2px solid rgba(255,80,80,0.2);
+    opacity: 0;
+    pointer-events: none;
+  }
+  #aimKnob {
+    position: absolute;
+    width: 44px; height: 44px;
+    margin: -22px 0 0 -22px;
+    border-radius: 50%;
+    background: rgba(255,80,80,0.4);
+    border: 2px solid #f66;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 换弹按钮 */
+  #reloadBtn {
+    position: absolute;
+    right: 24px; bottom: 170px;
+    width: 70px; height: 70px;
+    border-radius: 50%;
+    background: rgba(255,170,0,0.15);
+    border: 2px solid #fa0;
+    color: #fa0;
+    font-size: 11px; font-weight: bold;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    text-shadow: 0 0 6px #fa0;
+    touch-action: none;
+    font-family: monospace;
+  }
+  #reloadBtn.disabled { opacity: 0.3; }
+
+  /* 开镜按钮 */
+  #scopeBtn {
+    position: absolute;
+    right: 24px; bottom: 260px;
+    width: 70px; height: 70px;
+    border-radius: 50%;
+    background: rgba(0,255,180,0.15);
+    border: 2px solid #0fc;
+    color: #0fc;
+    font-size: 11px; font-weight: bold;
+    display: none;
+    flex-direction: column;
+    justify-content: center; align-items: center;
+    text-shadow: 0 0 6px #0fc;
+    touch-action: none;
+    font-family: monospace;
+  }
+  #scopeBtn.visible { display: flex; }
+  #scopeBtn.active {
+    background: rgba(0,255,180,0.4);
+    box-shadow: 0 0 20px #0fc;
+    color: #fff;
+  }
+
+  /* 开镜遮罩 */
+  #scopeOverlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    display: none;
+  }
+  #scopeOverlay.active { display: block; }
+  #scopeOverlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at center,
+      transparent 0,
+      transparent 34%,
+      rgba(0,0,0,0.85) 38%,
+      rgba(0,0,0,0.95) 100%);
+  }
+  #scopeOverlay::after {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 2px; height: 100vh;
+    background: rgba(0,255,180,0.3);
+    transform: translate(-50%, -50%);
+  }
+  #scopeCrossV {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 100vw; height: 2px;
+    background: rgba(0,255,180,0.3);
+    transform: translate(-50%, -50%);
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="hud">HP: <span id="hp">100</span> | SCORE: <span id="score">0</span></div>
+
+<div id="weaponBar">
+  <div class="weaponBtn" data-weapon="0">
+    <span class="wName">手枪<span class="wKey">1</span></span>
+    <span class="wAmmo" data-ammo>12/12</span>
+  </div>
+  <div class="weaponBtn" data-weapon="1">
+    <span class="wName">霰弹<span class="wKey">2</span></span>
+    <span class="wAmmo" data-ammo>6/6</span>
+  </div>
+  <div class="weaponBtn" data-weapon="2">
+    <span class="wName">步枪<span class="wKey">3</span></span>
+    <span class="wAmmo" data-ammo>30/30</span>
+  </div>
+  <div class="weaponBtn" data-weapon="3">
+    <span class="wName">狙击<span class="wKey">4</span></span>
+    <span class="wAmmo" data-ammo>5/5</span>
+  </div>
+</div>
+
+<div id="weaponHud">
+  <div id="weaponName">手枪</div>
+  <div id="ammoText">12 / 12</div>
+  <div id="scopeHint">开镜中 · 移动变慢</div>
+</div>
+
+<div id="touchLayer">
+  <div id="joyBase"><div id="joyKnob"></div></div>
+  <div id="aimZone">
+    <div id="aimBase"></div>
+    <div id="aimKnob"></div>
+  </div>
+  <div id="reloadBtn">换弹<br>R</div>
+  <div id="scopeBtn">开镜<br>🔭</div>
+</div>
+
+<div id="scopeOverlay"><div id="scopeCrossV"></div></div>
+
+<div id="overlay">
+  <h1>GAME OVER</h1>
+  <p>最终得分：<span id="finalScore">0</span></p>
+  <button onclick="restartGame()">重新开始</button>
+</div>
+
+<script>
+// ============================================================
+// DOM
+// ============================================================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const $hp = document.getElementById('hp');
+const $score = document.getElementById('score');
+const $weaponName = document.getElementById('weaponName');
+const $ammoText = document.getElementById('ammoText');
+const $weaponHud = document.getElementById('weaponHud');
+const $reloadBtn = document.getElementById('reloadBtn');
+const $scopeBtn = document.getElementById('scopeBtn');
+const $scopeOverlay = document.getElementById('scopeOverlay');
+const $overlay = document.getElementById('overlay');
+const $finalScore = document.getElementById('finalScore');
+const $weaponBtns = document.querySelectorAll('.weaponBtn');
+
+// ============================================================
+// 设备检测
+// ============================================================
+const isMobile = /Android|iPhone|iPad|iPod|Mobile|Touch/i.test(navigator.userAgent)
+                 || ('ontouchstart' in window && window.innerWidth < 900);
+document.body.classList.add(isMobile ? 'mobile' : 'pc');
+
+// ============================================================
+// 画布
+// ============================================================
+let W = 0, H = 0;
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+function resizeCanvas() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+
+// ============================================================
+// 震动
+// ============================================================
+function vibrate(pattern) {
+  if (navigator.vibrate) {
+    try { navigator.vibrate(pattern); } catch (e) {}
+  }
+}
+
+// ============================================================
+// 武器配置
+// ============================================================
+const WEAPONS = [
+  { id: 0, name: '手枪',   magSize: 12, reloadTime: 1.0, fireInterval: 0.18,
+    bulletSpeed: 750, bulletR: 4, damage: 1, pellets: 1, spread: 0.03,
+    auto: false, color: '#0ff', recoil: 6, pierce: 0,
+    canScope: false, scopeSlow: 1.0, scopeSpread: 1.0 },
+
+  { id: 1, name: '霰弹枪', magSize: 6,  reloadTime: 1.8, fireInterval: 0.7,
+    bulletSpeed: 650, bulletR: 4, damage: 1, pellets: 6, spread: 0.28,
+    auto: false, color: '#fa0', recoil: 18, pierce: 0,
+    canScope: false, scopeSlow: 1.0, scopeSpread: 1.0 },
+
+  { id: 2, name: '步枪',   magSize: 30, reloadTime: 1.6, fireInterval: 0.09,
+    bulletSpeed: 900, bulletR: 3, damage: 1, pellets: 1, spread: 0.06,
+    auto: true,  color: '#0f0', recoil: 4, pierce: 0,
+    canScope: false, scopeSlow: 1.0, scopeSpread: 1.0 },
+
+  // 狙击枪：高伤 + 穿透 2 + 弹速极快 + 开镜后散射近乎为 0
+  { id: 3, name: '狙击枪', magSize: 5,  reloadTime: 2.4, fireInterval: 0.9,
+    bulletSpeed: 1600, bulletR: 3, damage: 5, pellets: 1, spread: 0.02,
+    auto: false, color: '#f0f', recoil: 22, pierce: 2,
+    canScope: true, scopeSlow: 0.35, scopeSpread: 0.15 },
+];
+
+// ============================================================
+// 状态
+// ============================================================
+const keys = {};
+const mouse = { x: 0, y: 0, down: false, right: false };
+let player, bullets, enemies, particles, score, gameOver, spawnTimer, lastTime;
+const camera = { shake: 0, zoom: 1, targetZoom: 1 };
+let scoped = false;
+
+const rand = (min, max) => Math.random() * (max - min) + min;
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+// ============================================================
+// 初始化
+// ============================================================
+function initGame() {
+  player = {
+    x: W / 2, y: H / 2,
+    r: 15, speed: 260,
+    hp: 100, maxHp: 100,
+    angle: 0, invincible: 0,
+    weaponIndex: 0, weapon: WEAPONS[0],
+    ammo: WEAPONS[0].magSize,
+    fireCooldown: 0,
+    reloading: false, reloadTimer: 0,
+    _triggerHeld: false,
+  };
+  bullets = [];
+  enemies = [];
+  particles = [];
+  score = 0;
+  gameOver = false;
+  spawnTimer = 0;
+  lastTime = performance.now();
+  camera.shake = 0;
+  camera.zoom = 1;
+  camera.targetZoom = 1;
+  scoped = false;
+  $overlay.style.display = 'none';
+  $scopeOverlay.classList.remove('active');
+  $scopeBtn.classList.remove('active');
+  $weaponHud.classList.remove('scoped');
+  updateWeaponHud();
+}
+
+function restartGame() { initGame(); }
+
+// ============================================================
+// 武器
+// ============================================================
+function switchWeapon(index) {
+  if (gameOver || index === player.weaponIndex) return;
+  if (index < 0 || index >= WEAPONS.length) return;
+  player.weaponIndex = index;
+  player.weapon = WEAPONS[index];
+  player.ammo = player.weapon.magSize;
+  player.reloading = false;
+  player.reloadTimer = 0;
+  player.fireCooldown = Math.max(player.fireCooldown, 0.15);
+  // 切到非狙击枪时自动关镜
+  if (!player.weapon.canScope) setScoped(false);
+  updateScopeBtn();
+  updateWeaponHud();
+  vibrate(15);
+}
+
+function startReload() {
+  if (gameOver || player.reloading) return;
+  if (player.ammo >= player.weapon.magSize) return;
+  player.reloading = true;
+  player.reloadTimer = player.weapon.reloadTime;
+  vibrate(20);
+  updateWeaponHud();
+}
+
+function finishReload() {
+  player.reloading = false;
+  player.ammo = player.weapon.magSize;
+  vibrate([30, 40, 30]);
+  updateWeaponHud();
+}
+
+function tryShoot() {
+  if (gameOver || player.reloading || player.fireCooldown > 0) return;
+  if (player.ammo <= 0) { startReload(); return; }
+  const w = player.weapon;
+
+  // 开镜时散射缩小
+  let spreadMul = 1;
+  if (scoped && w.canScope) spreadMul = w.scopeSpread;
+
+  for (let i = 0; i < w.pellets; i++) {
+    const a = player.angle + rand(-w.spread * spreadMul, w.spread * spreadMul);
+    bullets.push({
+      x: player.x + Math.cos(a) * (player.r + 6),
+      y: player.y + Math.sin(a) * (player.r + 6),
+      vx: Math.cos(a) * w.bulletSpeed,
+      vy: Math.sin(a) * w.bulletSpeed,
+      r: w.bulletR, owner: 'player', life: 1.5, color: w.color,
+      damage: w.damage, pierce: w.pierce, hitIds: new Set(),
+    });
+  }
+  player.ammo--;
+  player.fireCooldown = w.fireInterval;
+  camera.shake = Math.max(camera.shake, w.recoil);
+
+  // 开火震动：狙击枪更强
+  if (w.id === 3) vibrate(40);
+  else if (w.id === 1) vibrate([25, 20, 25]);
+  else vibrate(12);
+
+  updateWeaponHud();
+}
+
+// ============================================================
+// 开镜
+// ============================================================
+function setScoped(on) {
+  if (on && !player.weapon.canScope) return;
+  scoped = on;
+  camera.targetZoom = on ? 1.35 : 1;
+  $scopeOverlay.classList.toggle('active', on);
+  $scopeBtn.classList.toggle('active', on);
+  $weaponHud.classList.toggle('scoped', on);
+  if (on) vibrate(25);
+}
+
+function toggleScope() {
+  if (gameOver) return;
+  if (!player.weapon.canScope) return;
+  setScoped(!scoped);
+}
+
+function updateScopeBtn() {
+  if (player.weapon.canScope) {
+    $scopeBtn.classList.add('visible');
+  } else {
+    $scopeBtn.classList.remove('visible');
+  }
+}
+
+// ============================================================
+// HUD
+// ============================================================
+function updateWeaponHud() {
+  if (!player) return;
+  $weaponName.textContent = player.weapon.name;
+  if (player.reloading) {
+    $ammoText.textContent = '换弹中...';
+    $ammoText.className = 'reloading';
+  } else if (player.ammo === 0) {
+    $ammoText.textContent = '0 / ' + player.weapon.magSize + '  按R换弹';
+    $ammoText.className = 'empty';
+  } else {
+    $ammoText.textContent = player.ammo + ' / ' + player.weapon.magSize;
+    $ammoText.className = '';
+  }
+
+  $weaponBtns.forEach(btn => {
+    const idx = parseInt(btn.dataset.weapon);
+    const isActive = idx === player.weaponIndex;
+    btn.classList.toggle('active', isActive);
+    const ammoEl = btn.querySelector('[data-ammo]');
+    if (isActive) {
+      if (player.reloading) {
+        btn.classList.add('reloading'); btn.classList.remove('empty');
+        ammoEl.textContent = '换弹中';
+      } else if (player.ammo === 0) {
+        btn.classList.add('empty'); btn.classList.remove('reloading');
+        ammoEl.textContent = '0/' + player.weapon.magSize;
+      } else {
+        btn.classList.remove('reloading', 'empty');
+        ammoEl.textContent = player.ammo + '/' + player.weapon.magSize;
+      }
+    } else {
+      btn.classList.remove('reloading', 'empty');
+      ammoEl.textContent = WEAPONS[idx].magSize + '/' + WEAPONS[idx].magSize;
+    }
+  });
+
+  if (player.reloading || player.ammo >= player.weapon.magSize) {
+    $reloadBtn.classList.add('disabled');
+  } else {
+    $reloadBtn.classList.remove('disabled');
+  }
+}
+
+// ============================================================
+// 左上角武器按钮
+// ============================================================
+$weaponBtns.forEach(btn => {
+  const idx = parseInt(btn.dataset.weapon);
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation();
+    switchWeapon(idx);
+  });
+  btn.addEventListener('touchstart', e => {
+    e.preventDefault(); e.stopPropagation();
+  }, { passive: false });
+});
+
+// ============================================================
+// PC 输入
+// ============================================================
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if (k === 'r') startReload();
+  if (k === '1') switchWeapon(0);
+  if (k === '2') switchWeapon(1);
+  if (k === '3') switchWeapon(2);
+  if (k === '4') switchWeapon(3);
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+});
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0) mouse.down = true;
+  if (e.button === 2) { mouse.right = true; toggleScope(); }
+});
+window.addEventListener('mouseup', e => {
+  if (e.button === 0) mouse.down = false;
+  if (e.button === 2) mouse.right = false;
+});
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ============================================================
+// 移动端：左摇杆
+// ============================================================
+const joyBase = document.getElementById('joyBase');
+const joyKnob = document.getElementById('joyKnob');
+const moveVec = { x: 0, y: 0 };
+let moveTouchId = null;
+const joyCenter = { x: 0, y: 0 };
+const JOY_RADIUS = 65;
+
+function refreshJoyCenter() {
+  const r = joyBase.getBoundingClientRect();
+  joyCenter.x = r.left + r.width / 2;
+  joyCenter.y = r.top + r.height / 2;
+}
+function handleJoyMove(cx, cy) {
+  let dx = cx - joyCenter.x;
+  let dy = cy - joyCenter.y;
+  const d = Math.hypot(dx, dy);
+  if (d > JOY_RADIUS) { dx = dx / d * JOY_RADIUS; dy = dy / d * JOY_RADIUS; }
+  joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+  moveVec.x = dx / JOY_RADIUS;
+  moveVec.y = dy / JOY_RADIUS;
+}
+joyBase.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (moveTouchId !== null) return;
+  const t = e.changedTouches[0];
+  moveTouchId = t.identifier;
+  refreshJoyCenter();
+  handleJoyMove(t.clientX, t.clientY);
+}, { passive: false });
+joyBase.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === moveTouchId) handleJoyMove(t.clientX, t.clientY);
+  }
+}, { passive: false });
+function endJoy(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === moveTouchId) {
+      moveTouchId = null;
+      moveVec.x = 0; moveVec.y = 0;
+      joyKnob.style.transform = 'translate(0,0)';
+    }
+  }
+}
+joyBase.addEventListener('touchend', endJoy);
+joyBase.addEventListener('touchcancel', endJoy);
+
+// ============================================================
+// 移动端：右半屏瞄准
+// 关键修复：瞄准方向仅由右侧拖动改变，绝不读取移动摇杆
+// ============================================================
+const aimZone = document.getElementById('aimZone');
+const aimBase = document.getElementById('aimBase');
+const aimKnob = document.getElementById('aimKnob');
+let aimTouchId = null;
+const aimCenter = { x: 0, y: 0 };
+const aimVec = { x: 1, y: 0 };
+let aimActive = false;  // 是否正在拖动瞄准
+const AIM_RADIUS = 55;
+const AIM_DEADZONE = 14;
+
+aimZone.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (aimTouchId !== null) return;
+  const t = e.changedTouches[0];
+  aimTouchId = t.identifier;
+  aimCenter.x = t.clientX;
+  aimCenter.y = t.clientY;
+  aimBase.style.left = t.clientX + 'px';
+  aimBase.style.top = t.clientY + 'px';
+  aimKnob.style.left = t.clientX + 'px';
+  aimKnob.style.top = t.clientY + 'px';
+  aimBase.style.opacity = '1';
+  aimKnob.style.opacity = '1';
+  aimActive = true;
+  // 注意：这里不重置 aimVec，让玩家继续沿用上次朝向，避免开局突然转向
+}, { passive: false });
+
+aimZone.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier !== aimTouchId) continue;
+    let dx = t.clientX - aimCenter.x;
+    let dy = t.clientY - aimCenter.y;
+    const d = Math.hypot(dx, dy);
+    if (d > AIM_RADIUS) { dx = dx / d * AIM_RADIUS; dy = dy / d * AIM_RADIUS; }
+    aimKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    // 只有超过死区才更新朝向，防止手指微抖时方向乱转
+    if (d > AIM_DEADZONE) {
+      aimVec.x = dx / d;
+      aimVec.y = dy / d;
+    }
+  }
+}, { passive: false });
+
+function endAim(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === aimTouchId) {
+      aimTouchId = null;
+      aimActive = false;
+      aimBase.style.opacity = '0';
+      aimKnob.style.opacity = '0';
+      aimKnob.style.transform = 'translate(0,0)';
+    }
+  }
+}
+aimZone.addEventListener('touchend', endAim);
+aimZone.addEventListener('touchcancel', endAim);
+
+// 移动端按钮
+$reloadBtn.addEventListener('touchstart', e => {
+  e.preventDefault(); startReload();
+}, { passive: false });
+
+$scopeBtn.addEventListener('touchstart', e => {
+  e.preventDefault(); toggleScope();
+}, { passive: false });
+
+// ============================================================
+// 敌人 / 粒子
+// ============================================================
+function spawnEnemy() {
+  const side = Math.floor(Math.random() * 4);
+  const pad = 40;
+  let x, y;
+  if (side === 0) { x = rand(0, W); y = -pad; }
+  else if (side === 1) { x = W + pad; y = rand(0, H); }
+  else if (side === 2) { x = rand(0, W); y = H + pad; }
+  else { x = -pad; y = rand(0, H); }
+
+  const type = Math.random() < 0.8 ? 'chaser' : 'shooter';
+  enemies.push({
+    x, y,
+    r: type === 'chaser' ? 14 : 18,
+    speed: type === 'chaser' ? rand(70, 110) : rand(50, 80),
+    hp: type === 'chaser' ? 1 : 3,
+    type,
+    color: type === 'chaser' ? '#f66' : '#fa0',
+    shootCooldown: rand(1, 2),
+    id: Math.random(),
+  });
+}
+
+function enemyShoot(e) {
+  const a = Math.atan2(player.y - e.y, player.x - e.x);
+  bullets.push({
+    x: e.x, y: e.y,
+    vx: Math.cos(a) * 300, vy: Math.sin(a) * 300,
+    r: 5, owner: 'enemy', life: 3, color: '#f44',
+    damage: 10, pierce: 0, hitIds: new Set(),
+  });
+}
+
+function explode(x, y, color, count = 12) {
+  for (let i = 0; i < count; i++) {
+    const a = rand(0, Math.PI * 2);
+    const s = rand(60, 260);
+    particles.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: rand(0.3, 0.7), maxLife: 0.7, color, r: rand(2, 4),
+    });
+  }
+}
+
+// ============================================================
+// 更新
+// ============================================================
+function update(dt) {
+  if (gameOver) return;
+
+  // 摄像机缩放平滑
+  camera.zoom += (camera.targetZoom - camera.zoom) * Math.min(1, dt * 10);
+
+  // 移动
+  let dx = 0, dy = 0;
+  if (isMobile) {
+    dx = moveVec.x; dy = moveVec.y;
+  } else {
+    if (keys['w'] || keys['arrowup']) dy -= 1;
+    if (keys['s'] || keys['arrowdown']) dy += 1;
+    if (keys['a'] || keys['arrowleft']) dx -= 1;
+    if (keys['d'] || keys['arrowright']) dx += 1;
+    const len = Math.hypot(dx, dy);
+    if (len > 0) { dx /= len; dy /= len; }
+  }
+
+  // 开镜时移动变慢
+  let speedMul = 1;
+  if (scoped && player.weapon.canScope) speedMul = player.weapon.scopeSlow;
+
+  player.x = clamp(player.x + dx * player.speed * speedMul * dt, player.r, W - player.r);
+  player.y = clamp(player.y + dy * player.speed * speedMul * dt, player.r, H - player.r);
+
+  // 瞄准：手机端只由 aimVec 决定；PC 端鼠标
+  if (isMobile) {
+    if (aimVec.x !== 0 || aimVec.y !== 0) {
+      player.angle = Math.atan2(aimVec.y, aimVec.x);
+    }
+  } else {
+    // PC 开镜时也要用鼠标位置算角度，但缩放后要修正
+    player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+  }
+
+  // 射击
+  const w = player.weapon;
+  const wantShoot = isMobile ? aimActive : mouse.down;
+  if (wantShoot) {
+    if (w.auto) tryShoot();
+    else if (!player._triggerHeld) { tryShoot(); player._triggerHeld = true; }
+  } else {
+    player._triggerHeld = false;
+  }
+  if (player.fireCooldown > 0) player.fireCooldown -= dt;
+
+  if (player.reloading) {
+    player.reloadTimer -= dt;
+    if (player.reloadTimer <= 0) finishReload();
+    else updateWeaponHud();
+  }
+
+  if (player.invincible > 0) player.invincible -= dt;
+
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) {
+    spawnEnemy();
+    spawnTimer = Math.max(0.3, 1.2 - score * 0.01);
+  }
+
+  // 子弹
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    b.life -= dt;
+    if (b.life <= 0 || b.x < -50 || b.x > W + 50 || b.y < -50 || b.y > H + 50) {
+      bullets.splice(i, 1); continue;
+    }
+    if (b.owner === 'player') {
+      let removed = false;
+      for (let j = enemies.length - 1; j >= 0; j--) {
+        const e = enemies[j];
+        if (b.hitIds.has(e.id)) continue;
+        if (dist(b, e) < b.r + e.r) {
+          e.hp -= b.damage;
+          b.hitIds.add(e.id);
+          explode(b.x, b.y, w.color, 4);
+          if (e.hp <= 0) {
+            explode(e.x, e.y, e.color, 20);
+            enemies.splice(j, 1);
+            score += e.type === 'chaser' ? 10 : 30;
+          }
+          if (b.pierce > 0) {
+            b.pierce--;
+          } else {
+            bullets.splice(i, 1);
+            removed = true;
+            break;
+          }
+        }
+      }
+      if (removed) continue;
+    } else {
+      if (player.invincible <= 0 && dist(b, player) < b.r + player.r) {
+        player.hp -= b.damage;
+        player.invincible = 0.5;
+        explode(b.x, b.y, '#f44', 10);
+        bullets.splice(i, 1);
+        camera.shake = Math.max(camera.shake, 10);
+        vibrate(60);
+        if (player.hp <= 0) endGame();
+      }
+    }
+  }
+
+  // 敌人
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    const a = Math.atan2(player.y - e.y, player.x - e.x);
+    e.x += Math.cos(a) * e.speed * dt;
+    e.y += Math.sin(a) * e.speed * dt;
+
+    if (e.type === 'shooter') {
+      e.shootCooldown -= dt;
+      if (e.shootCooldown <= 0) { enemyShoot(e); e.shootCooldown = rand(1.5, 2.5); }
+    }
+
+    if (player.invincible <= 0 && dist(e, player) < e.r + player.r) {
+      player.hp -= e.type === 'chaser' ? 15 : 20;
+      player.invincible = 0.6;
+      explode(e.x, e.y, e.color, 15);
+      enemies.splice(i, 1);
+      camera.shake = Math.max(camera.shake, 14);
+      vibrate([40, 30, 60]);
+      if (player.hp <= 0) endGame();
+    }
+  }
+
+  // 粒子
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.94; p.vy *= 0.94;
+    p.life -= dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  if (camera.shake > 0) camera.shake = Math.max(0, camera.shake - dt * 60);
+}
+
+// ============================================================
+// 渲染
+// ============================================================
+function render() {
+  ctx.save();
+  if (camera.shake > 0) {
+    const s = camera.shake;
+    ctx.translate(rand(-s, s), rand(-s, s));
+  }
+
+  // 应用缩放（以玩家为中心）
+  if (camera.zoom !== 1) {
+    ctx.translate(player.x, player.y);
+    ctx.scale(camera.zoom, camera.zoom);
+    ctx.translate(-player.x, -player.y);
+  }
+
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(-50, -50, W + 100, H + 100);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  for (const e of enemies) {
+    ctx.fillStyle = e.color;
+    ctx.shadowColor = e.color; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  for (const b of bullets) {
+    ctx.fillStyle = b.color;
+    ctx.shadowColor = b.color; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  const flicker = player.invincible > 0 && Math.floor(player.invincible * 20) % 2 === 0;
+  if (!flicker) {
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.angle);
+    ctx.fillStyle = '#0ff';
+    ctx.shadowColor = '#0ff'; ctx.shadowBlur = 15;
+    ctx.beginPath(); ctx.arc(0, 0, player.r, 0, Math.PI * 2); ctx.fill();
+    const barrelLen = player.weapon.id === 3 ? 28
+                    : player.weapon.id === 2 ? 22
+                    : player.weapon.id === 1 ? 18 : 14;
+    ctx.fillStyle = player.weapon.color;
+    ctx.fillRect(player.r - 4, -3, barrelLen, 6);
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+
+  if (player.reloading) {
+    const progress = 1 - player.reloadTimer / player.weapon.reloadTime;
+    ctx.strokeStyle = '#fa0'; ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.r + 10, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // PC 准星
+  if (!isMobile) {
+    const cx = mouse.x, cy = mouse.y;
+    if (scoped && player.weapon.canScope) {
+      ctx.strokeStyle = '#0fc'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx - 12, cy); ctx.lineTo(cx - 3, cy);
+      ctx.moveTo(cx + 3, cy); ctx.lineTo(cx + 12, cy);
+      ctx.moveTo(cx, cy - 12); ctx.lineTo(cx, cy - 3);
+      ctx.moveTo(cx, cy + 3); ctx.lineTo(cx, cy + 12);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#0fc'; ctx.fill();
+    } else {
+      ctx.strokeStyle = '#0ff'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 10, 0, Math.PI * 2);
+      ctx.moveTo(cx - 16, cy); ctx.lineTo(cx - 6, cy);
+      ctx.moveTo(cx + 6, cy); ctx.lineTo(cx + 16, cy);
+      ctx.moveTo(cx, cy - 16); ctx.lineTo(cx, cy - 6);
+      ctx.moveTo(cx, cy + 6); ctx.lineTo(cx, cy + 16);
+      ctx.stroke();
+    }
+  }
+
+  const hpW = Math.min(200, W * 0.4), hpH = 14;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(12, H - 34, hpW, hpH);
+  ctx.fillStyle = player.hp > 40 ? '#0f0' : '#f44';
+  ctx.fillRect(12, H - 34, hpW * (player.hp / player.maxHp), hpH);
+  ctx.strokeStyle = '#fff';
+  ctx.strokeRect(12, H - 34, hpW, hpH);
+
+  ctx.restore();
+}
+
+// ============================================================
+// 结束 / 主循环
+// ============================================================
+function endGame() {
+  gameOver = true;
+  $finalScore.textContent = score;
+  $overlay.style.display = 'flex';
+  vibrate([80, 60, 120]);
+  setScoped(false);
+}
+
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  update(dt);
+  render();
+
+  $hp.textContent = Math.max(0, player.hp);
+  $score.textContent = score;
+
+  requestAnimationFrame(loop);
+}
+
+// ============================================================
+// 启动
+// ============================================================
+resizeCanvas();
+initGame();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
